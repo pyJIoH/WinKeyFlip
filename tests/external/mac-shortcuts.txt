@@ -1,0 +1,68 @@
+# Mac shortcuts in the windows of tests\external\two-windows.ps1:
+#
+#   dist\KeyFlip.Tests.exe --external "KeyFlip check A" tests\external\mac-shortcuts.txt
+#
+# With --installed the same keys go through the copy of KeyFlip that is running; turn
+# its Mac shortcuts on first, and convert with Win rather than Alt.
+mac-shortcuts:on
+# A lone Alt must not be the conversion gesture here.
+tap-key:win
+layout:en
+
+# Moving and selecting.
+type:one two three
+key:alt+left
+type:X
+expect:Xone two three
+key:alt+right
+type:Y
+expect:Xone two threeY
+key:win+left
+type:Z
+expect:Xone two ZthreeY
+key:alt+shift+left
+type:W
+expect:WthreeY
+
+# Deleting to the start and to the end of the line; the start and the end of the text.
+key:alt+right
+key:enter
+type:second line here
+key:win+left
+key:alt+backspace
+expect:WthreeY\nhere
+key:alt+up
+key:alt+delete
+expect:\nhere
+key:alt+down
+type: again
+expect:\nhere again
+key:win+shift+left
+type:there
+expect:\nhere there
+
+# A lone Alt opens no menu, and Alt+Shift does not change the input language.
+key:alt
+key:alt+shift
+type:w
+expect:\nhere therew
+expect-layout:en
+
+# The next window of the same program, and back.
+key:alt+`
+front:KeyFlip check B
+type:b
+expect:b
+key:alt+`
+front:KeyFlip check A
+expect:\nhere therew
+key:alt+shift+`
+front:KeyFlip check B
+key:alt+m
+minimized:KeyFlip check B
+
+# Quit: Alt+Q closes the window, which Windows brought forward when the other one
+# was minimized.
+front:KeyFlip check A
+key:alt+q
+gone

@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using System.Threading;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 namespace KeyFlip
 {
@@ -15,6 +16,7 @@ namespace KeyFlip
         private readonly ToolStripMenuItem hintItem = new ToolStripMenuItem();
         private readonly ToolStripMenuItem statusItem = new ToolStripMenuItem();
         private readonly ToolStripMenuItem pauseItem = new ToolStripMenuItem();
+        private readonly ToolStripMenuItem macItem = new ToolStripMenuItem("Mac shortcuts");
         private readonly Icon activeIcon;
         private readonly Icon pausedIcon;
         private readonly RegisteredWaitHandle showRegistration;
@@ -45,6 +47,8 @@ namespace KeyFlip
             menu.Items.Add(new ToolStripSeparator());
             pauseItem.Click += delegate { engine.ToggleEnabled(); };
             menu.Items.Add(pauseItem);
+            macItem.Click += delegate { engine.SaveMacShortcuts(!engine.MacShortcuts); };
+            menu.Items.Add(macItem);
             menu.Items.Add(new ToolStripMenuItem("Settings…", null, delegate { ShowSettings(); }));
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(new ToolStripMenuItem("Quit KeyFlip", null, delegate { Quit(); }));
@@ -64,6 +68,11 @@ namespace KeyFlip
             timer.Tick += delegate { engine.Tick(); };
             timer.Start();
 
+            // Keys that are held when the screen is locked or the computer goes to
+            // sleep are released where KeyFlip cannot see it.
+            SystemEvents.SessionSwitch += SessionSwitched;
+            SystemEvents.PowerModeChanged += PowerModeChanged;
+
             // A second copy of KeyFlip signals these events instead of starting.
             showRegistration = ThreadPool.RegisterWaitForSingleObject(showSettings, delegate
             {
@@ -79,6 +88,22 @@ namespace KeyFlip
                 Settings.HasOpened = true;
                 ShowSettings();
             }
+        }
+
+        private void SessionSwitched(object sender, SessionSwitchEventArgs e)
+        {
+            engine.InputInterrupted();
+        }
+
+        private void PowerModeChanged(object sender, PowerModeChangedEventArgs e)
+        {
+            engine.InputInterrupted();
+        }
+
+        private void StopWatchingSession()
+        {
+            SystemEvents.SessionSwitch -= SessionSwitched;
+            SystemEvents.PowerModeChanged -= PowerModeChanged;
         }
 
         /// May be called on any thread, many times a second.
@@ -103,6 +128,7 @@ namespace KeyFlip
             hintItem.Text = engine.LayoutKeyName + ": layout  ·  Left Ctrl: case";
             statusItem.Text = status.Length > 90 ? status.Substring(0, 89) + "…" : status;
             pauseItem.Text = engine.Enabled ? "Pause" : "Resume";
+            macItem.Checked = engine.MacShortcuts;
             if (settings != null) settings.UpdateState();
         }
 
@@ -125,6 +151,7 @@ namespace KeyFlip
             if (closing) return;
             closing = true;
             timer.Stop();
+            StopWatchingSession();
             showRegistration.Unregister(null);
             quitRegistration.Unregister(null);
             engine.StateChanged -= StateChanged;
@@ -141,6 +168,7 @@ namespace KeyFlip
                 if (!closing)
                 {
                     closing = true;
+                    StopWatchingSession();
                     engine.Shutdown();
                 }
                 tray.Dispose();

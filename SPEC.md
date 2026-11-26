@@ -21,6 +21,9 @@ keyboard that is shared with a Mac, the Windows key is the key that is Option
 on the Mac, so choosing Win keeps the gesture on the same physical key on both
 systems.
 
+For such a keyboard there is also an optional layer of **Mac shortcuts**
+(section 14): Alt works as Command and the Windows key as Option.
+
 ### Goals
 
 - Behave like the macOS app wherever Windows allows it.
@@ -34,7 +37,7 @@ systems.
 
 - Languages other than English and Russian; automatic (as-you-type) correction.
 - Configurable hotkeys, beyond the choice between Alt and Win for the
-  conversion gesture.
+  conversion gesture. The Mac shortcuts are one fixed table, on or off.
 - Working inside elevated (administrator) windows while KeyFlip itself is not
   elevated, or on the secure desktop (UAC prompts, lock screen).
 
@@ -249,6 +252,8 @@ cancels it before text is touched.
 | Elevated windows, while KeyFlip is not elevated | Windows does not deliver the input. Nothing happens. |
 | Secure desktop | Not reachable. |
 
+The Mac shortcuts have exclusions of their own: section 14.
+
 ## 7. Privacy
 
 - No network access. Nothing typed is written to disk or kept as history.
@@ -262,16 +267,24 @@ cancels it before text is touched.
 - The clipboard is used only by strategies 2 and 3, as described above. A copy
   made by strategy 3 is written by the application itself and can appear in
   clipboard history.
+- With Mac shortcuts on, KeyFlip reads, each time another window comes to the
+  front: the name of the executable that owns it, its window class, and
+  whether that process is elevated; and, when a shortcut is pressed in a folder
+  window or on the desktop, the window class of the focused control and
+  whether a text caret is showing. This selects the shortcuts that apply. It
+  is kept in memory for the window in front only, and never stored or sent.
+  The shortcuts read no text and use no clipboard.
 
 ## 8. User interface
 
 - **Tray icon** (grey while paused). Tooltip and menu show the status line.
-  Menu: title, gesture hint, status, Pause/Resume, Settings…, Quit. A left
-  click opens Settings.
+  Menu: title, gesture hint, status, Pause/Resume, Mac shortcuts (a check
+  mark), Settings…, Quit. A left click opens Settings.
 - **Settings window**: active/paused badge, the two gestures with examples,
   English and Russian layout pickers with Refresh and a link to Windows language
   settings, the conversion key (Alt or Win), "Caps Lock only switches the
-  layout", "Start when I sign in", a
+  layout", "Mac shortcuts" with the programs to leave alone,
+  "Start when I sign in", a
   "Test conversion" group (pick a window,
   then run either action in it through the normal pipeline), the last detected
   gesture, the active layout, the status line, Pause/Resume and Quit.
@@ -279,7 +292,9 @@ cancels it before text is touched.
   window of the running one and exits.
 - Failures play the system default sound and set the status line.
 - Stored state (`HKCU\Software\KeyFlip`): the two layout ids, the conversion
-  key, the Caps Lock choice and a first-run flag. "Start when I sign in" is a value under
+  key, the Caps Lock choice, the Mac shortcuts choice (`MacShortcuts`, on only
+  when `1`) with its excluded programs (`ProgramsWithoutMacShortcuts`), and a
+  first-run flag. "Start when I sign in" is a value under
   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. Pause is not persisted.
 - `KeyFlip.exe --diagnose` prints the version, elevation, the candidate
   layouts and the active layout as JSON. It prints no editor text.
@@ -294,19 +309,23 @@ executable owns platform integration and the UI.
 | --- | --- |
 | `Core/TapDetector.cs` | Modifier press/release state machine; cancellation and timing |
 | `Core/CapsLockGesture.cs` | Caps Lock as the layout switch: press, auto-repeat, long press, lost release |
+| `Core/MacShortcuts.cs` | The table of Mac shortcuts: what a key with Command and Option held becomes, per kind of program |
+| `Core/KeyRemapper.cs` | Applies that table one keyboard event at a time: which events are swallowed, which synthetic ones are sent, which keys are hidden from or lent to the system |
 | `Core/WordAtCaret.cs` | Bounded word lookup with UTF-16 ranges |
 | `Core/TypedWordBuffer.cs` | In-memory current word; matching against editor text; copied-line detection |
 | `Core/Transforms.cs` | Case inversion, alphabet detection, character mapping |
 | `Core/KeyMap.cs` | Main-block scan codes; conversion table from two layouts |
 | `Core/ClipboardLease.cs` | Save, stage, claim and restore over an abstract clipboard |
-| `InputMonitor.cs` | Low-level keyboard and mouse hooks, foreground-change hook, on their own thread |
-| `KeySender.cs` | Tagged synthetic input: Backspace, Unicode typing, Ctrl+Insert, Shift+Insert, menu mask |
+| `InputMonitor.cs` | Low-level keyboard and mouse hooks, foreground-change and desktop-switch hooks, on their own thread; runs the remapper |
+| `KeySender.cs` | Tagged synthetic input: Backspace, Unicode typing, Ctrl+Insert, Shift+Insert, menu mask, the remapper's key events |
+| `ShortcutContext.cs` | What the remapper asks about the window in front: kind of program, exclusion, elevation, focus in a list of files |
+| `WindowCommands.cs` | The Mac shortcuts that are not key presses: next and previous window of a program, minimize, lock |
 | `Layouts.cs` | Layout enumeration and names, key translation, switching |
 | `TextAccess.cs` | UI Automation: focused editor, selection, word before the caret, verification |
 | `WinClipboard.cs` | Win32 clipboard behind the `IClipboard` interface |
 | `TextReplacement.cs` | Retype, verified paste, copy-and-paste |
 | `Engine.cs` | Coordinates input, strategies, status; the counterpart of `AppModel` |
-| `AppCategories.cs` | Terminals and key-forwarding applications |
+| `AppCategories.cs` | Terminals and key-forwarding applications; the kinds of program the Mac shortcuts distinguish |
 | `Settings.cs` | Registry-backed settings and start at sign-in |
 | `Native.cs` | Win32 declarations |
 | `AppIcon.cs` | The keycap icon, drawn at any size; also used by the build to write the `.ico` |
@@ -316,10 +335,12 @@ Threads:
 
 - **Input thread.** Owns the hooks and a message loop. A callback only updates
   the detector and the word buffer under a lock and queues an action; the menu
-  mask is the only thing sent from here. It never blocks: Windows silently
+  mask and the key events of the Mac shortcuts are the only things sent from
+  here. It never blocks and never waits for another process: Windows silently
   removes a low-level hook whose callback is slow.
 - **Action thread.** Runs one action at a time: UI Automation, clipboard,
-  synthetic input, waiting. Blocking here cannot delay input.
+  synthetic input, waiting, and the window commands of the Mac shortcuts.
+  Blocking here cannot delay input.
 - **UI thread.** Tray icon and settings. A one-second timer refreshes the
   active layout name and reinstalls the hooks if the system reports input that
   the hooks did not see for more than two seconds.
@@ -349,6 +370,7 @@ compares it with the value it started with.
 | Settings store | UserDefaults | Registry |
 | Launch at login | SMAppService | `Run` registry value |
 | Caps Lock | A macOS setting: a tap switches the input source, a long press is Caps Lock | The same, done by KeyFlip (optional). The layout switches at the press, not at the release, and is put back after a long press |
+| Mac shortcuts | The system's own; the app has nothing to do | An optional layer that rewrites keys (section 14). The Windows app has no counterpart setting to keep in step with |
 
 ## 11. Build, tests, tooling
 
@@ -366,14 +388,16 @@ compares it with the value it started with.
   flag) conversion with the installed layouts.
 - `scripts\test.cmd --e2e` → optional end-to-end check in its own window:
   classic edit controls, a rich edit control, a password field, and a control
-  that exposes no text. It takes the keyboard focus for about twenty seconds,
-  injects key presses only while that window is in the foreground, uses the
-  real clipboard (and checks that it is restored), and toggles the layout an
-  even number of times.
+  that exposes no text; then the Mac shortcuts, including a second window and
+  clicks. It takes the keyboard focus for about a minute, injects key presses
+  and clicks only while its window is in the foreground, puts the mouse
+  pointer back, uses the real clipboard (and checks that it is restored), and
+  toggles the layout an even number of times.
 - `dist\KeyFlip.Tests.exe --external <window title> <script file>` → the
   same pipeline in another application's window, driven by a script of key
   presses and expectations (`tests\external`). Keys are pressed only while
-  that window is in the foreground.
+  that window is in the foreground. With `--installed`, no engine is started
+  and the keys go through the running copy of KeyFlip.
 - `dist\KeyFlip.Tests.exe --render-settings <file.png>` draws the settings
   window without showing it.
 - CI (GitHub Actions, `windows-latest`): build and core tests.
@@ -400,6 +424,13 @@ a terminal. In particular:
 10. With Win as the conversion key: `ghbdtn` + Win → `привет` and the Start
     menu stays closed; Win+E and Win held over one second work as in Windows;
     a lone Alt tap converts nothing.
+11. With Mac shortcuts on: Alt+C and Alt+V copy and paste; Alt+← and Alt+→ go
+    to the start and the end of the line and Win+← and Win+→ move by word,
+    with Shift selecting; Alt+Tab switches programs; Alt+` goes to the next
+    window of the same program; a lone Alt opens no menu and a lone Win opens
+    the Start menu (unless Win is the conversion key); taps still convert; and
+    no modifier key is left down afterwards. With it off, nothing of this
+    happens.
 
 ## 13. Known limitations and open risks
 
@@ -430,3 +461,162 @@ a terminal. In particular:
   0.4 s for a copy before it switches the layout.
 - Ctrl is used far more on Windows than Control is on macOS. Pressing left
   Ctrl and releasing it without using it inverts the case of the last word.
+- The Mac shortcuts have costs and limits of their own: section 14.
+
+## 14. Mac shortcuts
+
+Optional and off by default. Meant for a keyboard that is shared with a Mac,
+on which Alt is where Command is and the Windows key is where Option is.
+While it is on, KeyFlip rewrites shortcuts inside the keyboard hook so that
+the same physical keys do on Windows what they do on macOS. Below, **Command**
+is either Alt key, **Option** is either Windows key, and Ctrl is Control.
+
+### The table (`Core/MacShortcuts.cs`)
+
+Keys fall into three classes. *Plain* keys are letters, digits, punctuation,
+the navigation and editing keys, Enter and Space. *System* keys are Tab, Esc,
+Print Screen, the menu key, the function keys and the numeric keypad. Every
+other key (media keys, lock keys) is never touched.
+
+- **General rule.** Command with a plain key is Ctrl with that key. Shift is
+  kept. Command+Option is Ctrl+Alt.
+- With a system key, Command stays Alt: Alt+Tab, Alt+F4, Alt+Esc, Alt codes.
+- With Ctrl held as well, nothing changes (Ctrl+Alt+key), except for
+  Ctrl+Command+F, Q and Space.
+- Option alone changes only the keys listed below; Win+letter, Win+digit and
+  the rest stay Windows shortcuts, and a lone press still opens the Start menu.
+- Command+click is Ctrl+click (Shift kept; with Option, Ctrl+Alt+click).
+
+| Keys | Windows receives |
+| --- | --- |
+| Command+Q | Alt+F4; on the desktop and the taskbar, nothing |
+| Command+Space | Win+S |
+| Command+Tab, with or without Shift | The same, with a real Alt; until Alt is released every key is passed unchanged, for the arrows of the task switcher |
+| Command+`, Command+Shift+` | Nothing; the next or previous window of the program comes forward |
+| Command+M, Command+H | Nothing; the window is minimized |
+| Command+Shift+3 | Win+PrtSc |
+| Command+Shift+4, Command+Shift+5 | Win+Shift+S |
+| Command+Shift+Z | Ctrl+Y (JetBrains: Ctrl+Shift+Z, by the general rule) |
+| Command+G, Command+Shift+G | F3, Shift+F3 (Office: Shift+F4, Ctrl+Shift+F4) |
+| Command+[ and ] | Browsers, folder windows: Alt+←, Alt+→. JetBrains: Ctrl+Alt+←, →. Elsewhere the general rule |
+| Command+Shift+[ and ], Command+Option+← and → | Ctrl+Shift+Tab, Ctrl+Tab. Code editors: Ctrl+PageUp, Ctrl+PageDown. JetBrains: Alt+←, Alt+→ for the brackets; the arrows follow the general rule |
+| Command+← and → | Home, End; Shift kept |
+| Command+↑ and ↓ | Ctrl+Home, Ctrl+End; Shift kept. Terminals: Ctrl+Shift+Home, Ctrl+Shift+End. A list of files: Alt+↑, and Enter |
+| Command+Backspace | Shift+Home, then Backspace. A list of files: Delete. JetBrains: Ctrl+Y. Terminals: Ctrl+Home |
+| Command+Delete | Shift+End, then Delete. Terminals: Ctrl+End |
+| Command+Option+Esc | Ctrl+Shift+Esc |
+| Command+Option+Space | Unchanged |
+| Ctrl+Command+F | F11 |
+| Ctrl+Command+Q | Nothing; the workstation is locked |
+| Ctrl+Command+Space | Win+. |
+| Option+← and → | Ctrl+←, Ctrl+→; Shift kept |
+| Option+↑ and ↓ | Ctrl+↑, Ctrl+↓; Shift kept. Code editors: Alt+↑, Alt+↓. JetBrains: Ctrl+W and Ctrl+Shift+W, with Shift Alt+Shift+↑ and ↓ |
+| Option+Backspace, Option+Delete | Ctrl+Backspace, Ctrl+Delete |
+| Option+Enter | JetBrains: Alt+Enter. Elsewhere unchanged |
+| Ctrl+Option+arrows | Win+arrows; Shift kept |
+
+More per kind of program: a list of files, Command+I → Alt+Enter and
+Command+O → Enter; browsers, Command+Y → Ctrl+H, Command+Option+I, J, C →
+Ctrl+Shift+I, J, C and Command+Option+U → Ctrl+U; JetBrains, Command+O and
+Command+Shift+O → Ctrl+N and Ctrl+Shift+N, Command+L → Ctrl+G, Command+, →
+Ctrl+Alt+S, Command+digit → Alt+digit; terminals, Command+letter →
+Ctrl+Shift+letter and Command+1…9 → Ctrl+Alt+1…9.
+
+**Kinds of program.** Decided from the executable name and the window class
+of the window in front (`AppCategories.KindOf`): terminal (a console or
+terminal window class, or a terminal emulator; a shell showing a window of its
+own is not one), browser, code editor (Visual Studio Code and its relatives),
+JetBrains IDE, Office, folder window (`explorer` with `CabinetWClass` or
+`ExploreWClass`), desktop (`explorer` with `Progman`, `WorkerW` or a taskbar
+class). The file rules of folder windows and the desktop apply only while the
+focused control is a list or a tree (`DirectUIHWND`, `SysListView32`,
+`SysTreeView32`) and no text caret is showing; when in doubt the text rules
+apply, because deleting text is the smaller mistake.
+
+### How keys are rewritten (`Core/KeyRemapper.cs`)
+
+- The press of Alt is swallowed. Alt is then **hidden**: held, but up as far
+  as the system knows, so nothing in Windows reacts to it and its release
+  cannot open a menu. The tap detector is told about physical keys, so a lone
+  tap still converts.
+- The Windows key is passed on as always. It is hidden only when an Option
+  shortcut is used: a synthetic release is sent, preceded by a press of the
+  unassigned key `0xE8` so that the Start menu stays closed.
+- When a shortcut becomes the same key with other modifiers (Alt+C → Ctrl+C),
+  the missing modifiers are pressed synthetically (**lent**), the key itself
+  is passed on, auto-repeat included, and the lent modifiers are released when
+  the key goes up, or when Command and Option are released before it.
+- When it becomes another key (Alt+← → Home), the key and its release are
+  swallowed and a complete press of the replacement is sent. Modifiers that
+  the replacement must not contain are released for it and pressed again
+  afterwards (Shift in Alt+Shift+Z → Ctrl+Y).
+- Where a real Alt is wanted (Alt+Tab, Alt+F4, Ctrl+Alt+key), the hidden key
+  itself is given back to the system; it stays visible until another shortcut
+  needs it gone or it is released. The same goes for a hidden Windows key
+  (Win+E after Win+←, in one hold).
+- Modifiers are released before others are pressed, and a press of `0xE8` is
+  sent before the release of Shift, Ctrl or Alt, and after modifiers that are
+  pressed for a click or pressed again after a shortcut, wherever Windows
+  would otherwise see Ctrl+Shift or Alt+Shift pressed and released with no key
+  in between: that is the shortcut that changes the input language.
+- AltGr is left alone: the left Ctrl with scan code `0x21D` that Windows sends
+  before right Alt marks it.
+- Synthetic events are sent from inside the hook, and Windows handles them
+  before the event the hook is looking at. They carry KeyFlip's tag.
+- The engine is told what is physically held. A key passed on with other
+  modifiers is reported with the modifiers the application receives, so that
+  Alt+A counts as the select-all gesture; a replaced key is reported as it was
+  pressed, with Alt or Win held, which clears the tracked word.
+
+**Never trusting memory.** The state of the modifier keys as Windows reports
+it is read at every event. The remapper remembers only the hidden and the
+lent keys, and corrects both from the system's state each time: a lent key
+that is up is no longer lent, a hidden key that is down is no longer hidden.
+
+**Lost releases.** A hidden Alt whose release never arrives would turn typing
+into shortcuts. Lent keys are released and hidden keys forgotten when a window
+that runs as administrator, or whose elevation cannot be read, comes to the
+front; when the desktop is switched (UAC prompt, lock screen); when the
+session is locked, unlocked or switched, and when the computer resumes; when
+the hooks are reinstalled; when the option is turned off or KeyFlip is paused.
+A synthetic release that Windows refuses is sent again at the next event.
+Beyond that, at a key press a hidden Alt or Win is taken as released after
+10 s without any keyboard event, or after 1.5 s if it was the last key pressed
+and this keyboard has shown that it auto-repeats modifier keys. Mouse clicks
+never expire it: files are picked one by one with Command held all along.
+
+**Window commands (`WindowCommands.cs`)**, on the action thread. *Next
+window*: among the visible, not minimized top-level windows of the same
+process and window class, the one furthest back comes forward, so that
+repeating the shortcut goes through all of them; *previous window* sends the
+one in front to the back and brings the next one forward. *Minimize* posts
+`WM_SYSCOMMAND`/`SC_MINIMIZE`, as the title bar button does, to the window in
+front or to the owner of a dialog, and only if it has a minimize button.
+*Lock* calls `LockWorkStation`.
+
+### Where it does not apply
+
+- Elevated windows while KeyFlip is not elevated: no input is delivered.
+- Remote desktops and virtual machines (the key-forwarding list of section 6)
+  and the programs the user listed, by executable name. There every key is
+  passed on exactly as pressed.
+- While KeyFlip is paused.
+
+### Costs and limits
+
+- Alt no longer opens menus or presses access keys; F10 still activates the
+  menu bar. Alt+Space no longer opens the window menu.
+- Alt+← and Alt+→ are no longer Back and Forward (Command+[ and ] are).
+- Win+arrows no longer snap windows (Ctrl+Win+arrows do), so Ctrl+Win+← and →
+  no longer switch virtual desktops.
+- Alt+Shift no longer changes the input language: Windows never sees Alt.
+- A terminal inside a code editor or an IDE cannot be told from the editor:
+  Command+C there is Ctrl+C.
+- Programs are recognized by a fixed list of executable names. An unlisted
+  browser or terminal gets the general rules.
+- Programs that read the keyboard below the level of Windows messages (some
+  games) see the synthetic events or the physical keys; exclude them.
+- Another program that rewrites the same keys (PowerToys Keyboard Manager,
+  AutoHotkey) conflicts with this layer.
+- Ctrl+Alt+Delete and Win+L are handled by Windows below the hook and work
+  as always; this has not been verified by a test.

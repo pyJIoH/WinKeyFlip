@@ -10,6 +10,8 @@ A small, offline Windows tray app for correcting text typed with the wrong Engli
 | **Left Ctrl** | Invert each letter's case | `Hello ПРИВЕТ` ↔ `hELLO привет` |
 | **Caps Lock** | Switch the keyboard layout only; no text is changed | English ↔ Russian |
 
+It can also make a keyboard that is shared with a Mac work the same on both systems: with [Mac shortcuts](#mac-shortcuts) turned on, Alt is Command and the Windows key is Option, so Alt+C copies, Alt+Q quits, and Win+← jumps over a word.
+
 Selected text takes priority. With no selection, KeyFlip changes the word immediately before the cursor. For a word you have just typed, this also works in terminals and other editors that hide their text from UI Automation (see [How text is replaced](#how-text-is-replaced)). Release the key within one second; typing, clicking, scrolling, or pressing another modifier cancels the gesture. Right Ctrl never triggers anything, and of Alt and the Windows key only the one chosen in Settings does. Normal keyboard shortcuts keep working.
 
 ## Requirements
@@ -32,7 +34,7 @@ The app is written to `dist\KeyFlip.exe`: one file, with its icon and manifest i
 
 1. Copy `dist\KeyFlip.exe` to a stable place, for example `%LOCALAPPDATA%\Programs\KeyFlip\`.
 2. Run it. A keycap icon with «Я» appears in the notification area, and Settings opens on the first launch. Later, click the icon or run `KeyFlip.exe` again to open Settings.
-3. Choose the English and Russian layouts if you have more than one of either. Tick **Start when I sign in** if desired, and untick **Caps Lock only switches the layout** if you want Caps Lock to stay as it is. On a keyboard that is shared with a Mac, choose **Win** under **Convert layout with a tap of** (see [Win instead of Alt](#usage-and-behavior)).
+3. Choose the English and Russian layouts if you have more than one of either. Tick **Start when I sign in** if desired, and untick **Caps Lock only switches the layout** if you want Caps Lock to stay as it is. On a keyboard that is shared with a Mac, choose **Win** under **Convert layout with a tap of** (see [Win instead of Alt](#usage-and-behavior)), and consider **Mac shortcuts** (see [Mac shortcuts](#mac-shortcuts)).
 
 To update, quit KeyFlip (tray menu, or `KeyFlip.exe --quit`) and replace the file. If you move the file, tick **Start when I sign in** again from the new location.
 
@@ -57,6 +59,71 @@ Type `ghbdtn`, release the keys, and tap Alt: the word becomes `привет` an
 **Win instead of Alt.** On a keyboard that is shared with a Mac, the key that is Option on the Mac is the Windows (Start) key on Windows. Choose **Win** under **Convert layout with a tap of** in Settings to keep the gesture on that key: a quick tap of either Windows key then converts the text and does not open the Start menu, and Alt goes back to what it does in Windows. Shortcuts such as Win+E, Win+V and Win+Shift+S keep working. To open the Start menu, hold the key for more than a second before releasing it, press Ctrl+Esc, or click the Start button. While KeyFlip is paused, and in windows that run as administrator, a tap opens the Start menu as usual.
 
 **Caps Lock.** A tap of Caps Lock switches between the two chosen layouts and nothing else: it does not turn capital letters on, and applications never see the key. For the regular Caps Lock, hold the key for half a second, as on macOS, or press it with Shift (or any other modifier): capitals turn on or off, and the layout stays as it was. The layout switches the moment the key goes down, so that whatever you type next is already in the new layout; when the press turns out to be a long one, the layout is put back. A word you were typing stays tracked, so you can still tap Alt afterwards to convert it. Untick **Caps Lock only switches the layout** in Settings to give the key back to Windows; while KeyFlip is paused, and in windows that run as administrator, it is the regular Caps Lock too.
+
+## Mac shortcuts
+
+Off unless you turn it on: tick **Mac shortcuts** in Settings, or in the menu of the tray icon. It is meant for a keyboard that is shared with a Mac, where Alt sits where Command is and the Windows key sits where Option is. With it on, the same fingers do the same things on both systems.
+
+**Alt is Command.** Alt with a letter, a digit, a punctuation key or Enter is sent to Windows as Ctrl with that key: Alt+C copies, Alt+V pastes, Alt+Z undoes, Alt+A selects everything, Alt+S saves, Alt+F finds, Alt+T opens a tab and Alt+W closes it. Shift is kept (Alt+Shift+T is Ctrl+Shift+T), Alt+Win+key is Ctrl+Alt+key, and Alt+click is Ctrl+click. The Ctrl key itself stays Ctrl.
+
+The shortcuts that are not simply "Ctrl instead":
+
+| Keys | What happens | Windows receives |
+| --- | --- | --- |
+| Alt+Q | Quit: the window closes | Alt+F4 |
+| Alt+Space | Search | Win+S |
+| Alt+Tab | Switch programs, as before | Alt+Tab |
+| Alt+` and Alt+Shift+` | The next and the previous window of the same program | nothing: KeyFlip brings the window forward |
+| Alt+M, Alt+H | Minimize the window | nothing: KeyFlip minimizes it |
+| Ctrl+Alt+F | Full screen | F11 |
+| Ctrl+Alt+Q | Lock the screen | nothing: KeyFlip locks it |
+| Ctrl+Alt+Space | Emoji panel | Win+. |
+| Alt+Win+Esc | Task Manager, for "Force Quit" | Ctrl+Shift+Esc |
+| Alt+Shift+3 | Screenshot to `Pictures\Screenshots` | Win+PrtSc |
+| Alt+Shift+4, Alt+Shift+5 | Snip a part of the screen | Win+Shift+S |
+| Alt+Shift+Z | Redo | Ctrl+Y |
+| Alt+G, Alt+Shift+G | Find next, find previous | F3, Shift+F3 |
+| Alt+[ and Alt+] | Back and forward, in browsers and folder windows | Alt+←, Alt+→ |
+| Alt+Shift+[ and Alt+Shift+], or Alt+Win+← and Alt+Win+→ | The previous and the next tab | Ctrl+Shift+Tab, Ctrl+Tab |
+
+**Moving in text.** Add Shift to select.
+
+| Keys | Moves | Windows receives |
+| --- | --- | --- |
+| Win+← and Win+→ | By word | Ctrl+←, Ctrl+→ |
+| Win+↑ and Win+↓ | By paragraph | Ctrl+↑, Ctrl+↓ |
+| Alt+← and Alt+→ | To the start and the end of the line | Home, End |
+| Alt+↑ and Alt+↓ | To the start and the end of the text | Ctrl+Home, Ctrl+End |
+| Win+Backspace and Win+Delete | Deletes the word before and after the cursor | Ctrl+Backspace, Ctrl+Delete |
+| Alt+Backspace | Deletes to the start of the line | Shift+Home, then Backspace |
+| Alt+Delete | Deletes to the end of the line | Shift+End, then Delete |
+
+**In particular programs.** KeyFlip looks at which program is in front:
+
+| Program | Differences |
+| --- | --- |
+| Terminals (Windows Terminal, the console, and others) | Alt+letter is Ctrl+Shift+letter, so Alt+C copies, Alt+V pastes and Alt+T opens a tab, while Ctrl+C still interrupts. Alt+1…9 choose a tab (Ctrl+Alt+1…9). Alt+↑ and Alt+↓ scroll to the top and the bottom (Ctrl+Shift+Home, Ctrl+Shift+End). Alt+Backspace and Alt+Delete delete to the start and the end of the command line (Ctrl+Home, Ctrl+End) |
+| Folder windows and the desktop | With the focus on a file rather than in a name that is being edited: Alt+Backspace deletes it (Delete), Alt+↓ and Alt+O open it (Enter), Alt+↑ goes to the folder above, Alt+I shows its properties (Alt+Enter). On the desktop Alt+Q does nothing: Alt+F4 there would offer to shut the computer down |
+| Browsers | Alt+Y opens the history (Ctrl+H). Alt+Win+I, J and C open the developer tools (Ctrl+Shift+I, J, C), Alt+Win+U the page source (Ctrl+U) |
+| Visual Studio Code, Cursor and relatives | Win+↑ and Win+↓ move the line (Alt+↑, Alt+↓), with Shift they copy it. Tabs are switched with Ctrl+PageUp and Ctrl+PageDown |
+| JetBrains IDEs | Win+↑ and Win+↓ extend and shrink the selection (Ctrl+W, Ctrl+Shift+W); Win+Shift+↑ and ↓ move the line (Alt+Shift+↑, ↓). Win+Enter shows the quick fixes (Alt+Enter). Alt+Backspace deletes the line (Ctrl+Y), and redo is Ctrl+Shift+Z. Alt+O and Alt+Shift+O go to a class and to a file (Ctrl+N, Ctrl+Shift+N), Alt+L to a line (Ctrl+G), Alt+, opens the settings (Ctrl+Alt+S), Alt+digit a tool window. Alt+[ and Alt+] go back and forward (Ctrl+Alt+←, →); Alt+Shift+[ and ] switch tabs (Alt+←, →) |
+| Microsoft Office | Alt+G and Alt+Shift+G are Shift+F4 and Ctrl+Shift+F4 |
+
+**What stays as it is.** Everything pressed with the real Ctrl. The Windows key with letters and digits (Win+E, Win+L, Win+V, Win+D) and alone, for the Start menu. Alt with the function keys, Esc, Print Screen and the numeric keypad: Alt+F4 and Alt codes. Alt+Win+Space. AltGr. KeyFlip's own taps of Alt or Win, left Ctrl and Caps Lock.
+
+**What you give up.**
+
+- Alt no longer opens menus or presses access keys such as Alt+F for File. F10 still activates the menu bar.
+- Alt+← and Alt+→ are no longer Back and Forward: use Alt+[ and Alt+].
+- Win+arrows no longer snap windows. Add Ctrl: Ctrl+Win+arrows snap, and Ctrl+Win+Shift+← and → move the window to another monitor. Ctrl+Win+← and → therefore no longer switch virtual desktops; Win+Tab still shows them.
+- Alt+Shift no longer changes the input language, because Windows never sees Alt go down. Caps Lock (with KeyFlip), Win+Space and Ctrl+Shift still do.
+- Alt+Space no longer opens the window's menu.
+
+**Where it does not apply.** In windows that run as administrator, where Windows shows KeyFlip no keys: there Alt is Alt. In remote desktops and virtual machines, which have a keyboard of their own behind the window. In the programs you list under **Except in these programs** in Settings (names of program files, separated by commas, for example `game.exe, vmconnect`). And while KeyFlip is paused.
+
+The terminal inside Visual Studio Code or a JetBrains IDE cannot be told from the editor around it, so there Alt+C is Ctrl+C: it copies when text is selected and interrupts the running program when it is not.
+
+If another tool already remaps Alt shortcuts (PowerToys Keyboard Manager, AutoHotkey), remove those remaps: two programs rewriting the same keys get in each other's way.
 
 ## How text is replaced
 
@@ -84,6 +151,8 @@ Strategies 2 and 3 temporarily use the clipboard, then restore everything that c
 
 UI Automation queries make Chromium-based applications turn on their accessibility support.
 
+With Mac shortcuts on, KeyFlip also looks at the program in front each time it changes: the name of its program file, the class of its window, whether it runs as administrator and, in folder windows, whether the focus is in a list of files. This decides which shortcuts apply; none of it is stored or sent. The shortcuts themselves read no text and use no clipboard.
+
 ## Tests
 
 ```bat
@@ -106,9 +175,9 @@ dist\KeyFlip.Tests.exe --external "KeyFlip editor checks" tests\external\browser
 
 The test runner is a standalone executable with no test framework. The platform checks need a logged-in desktop session; they post no input, take no focus, switch no layout and do not touch your clipboard.
 
-The end-to-end check is different: it opens a small window, takes the keyboard focus for about twenty seconds, presses keys while that window is in the foreground, uses the real clipboard (and checks that it is restored), and switches the layout an even number of times. Do not type while it runs.
+The end-to-end check is different: it opens a small window, takes the keyboard focus for about a minute, presses keys while that window is in the foreground, clicks in it (the mouse pointer is put back afterwards), uses the real clipboard (and checks that it is restored), and switches the layout an even number of times. Do not type or use the mouse while it runs.
 
-The scripted check does the same in a window you name, for example a browser showing `tests\fixtures\editor.html`; it presses keys only while that window is in the foreground.
+The scripted check does the same in a window you name, for example a browser showing `tests\fixtures\editor.html`; it presses keys only while that window is in the foreground. With `--installed` it starts no engine of its own, so the keys go through the copy of KeyFlip that is running.
 
 See [the testing guide](docs/TESTING.md) for coverage, the applications checked so far, and the manual checklist.
 
@@ -121,6 +190,9 @@ See [the testing guide](docs/TESTING.md) for coverage, the applications checked 
 - **Wrong or missing layout:** add English and Russian in Windows language settings, press **Refresh**, and choose the intended variant.
 - **Alt no longer opens the menu:** that is the price of the Alt gesture; hold Alt for more than a second or press F10.
 - **The Windows key no longer opens the Start menu:** that is the price of choosing Win for the gesture; hold the key for more than a second, press Ctrl+Esc, or switch back to Alt in Settings.
+- **With Mac shortcuts on, letters act as shortcuts, or Ctrl seems to be held:** KeyFlip missed the release of Alt or Win. Tap that key once. It also corrects itself at the next key press after ten seconds without typing.
+- **With Mac shortcuts on, a shortcut does the wrong thing in one program:** add the program's file name to **Except in these programs** in Settings; there the keys are left as Windows has them. In a window that runs as administrator, Alt is always Alt.
+- **Mac shortcuts fight with another remapper:** remove the Alt remaps from PowerToys Keyboard Manager or your AutoHotkey script; KeyFlip covers them.
 
 The **Test conversion** controls in Settings run either action in a chosen window through the normal pipeline. They help separate a gesture-detection problem from a text-access problem.
 

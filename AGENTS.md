@@ -27,7 +27,7 @@ scripts\build.cmd
 scripts\check-platform.cmd --with-layouts
 ```
 
-`scripts\test.cmd --e2e` exercises the whole pipeline but takes the keyboard focus and types into its own window for about twenty seconds; warn the user before running it. `dist\KeyFlip.Tests.exe --external` does the same in a real application's window (scripts in `tests/external`). Update `docs/TESTING.md` when you add scenarios or manual checks. Report which real editors were or were not checked by hand.
+`scripts\test.cmd --e2e` exercises the whole pipeline but takes the keyboard focus, types into its own window for about a minute and clicks in it; warn the user before running it. `dist\KeyFlip.Tests.exe --external` does the same in a real application's window (scripts in `tests/external`); with `--installed` the keys go through the running copy of KeyFlip instead of an engine of the check. Update `docs/TESTING.md` when you add scenarios or manual checks. Report which real editors were or were not checked by hand.
 
 ## Git
 
@@ -36,4 +36,4 @@ scripts\check-platform.cmd --with-layouts
 
 ## Installing a build
 
-Quit the running copy first (`KeyFlip.exe --quit`), then replace the file; a running executable cannot be overwritten. Settings live in `HKCU\Software\KeyFlip`; start at sign-in is a value named `KeyFlip` under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` that holds the path of the executable.
+Quit the running copy first (`KeyFlip.exe --quit`), then replace the file; a running executable cannot be overwritten. Settings live in `HKCU\Software\KeyFlip` (the Mac shortcuts are on when `MacShortcuts` is `1`); start at sign-in is a value named `KeyFlip` under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` that holds the path of the executable.

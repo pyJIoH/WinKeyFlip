@@ -64,9 +64,22 @@ namespace KeyFlip
         public const uint KEYEVENTF_UNICODE = 0x0004;
 
         public const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
+        public const uint EVENT_SYSTEM_DESKTOPSWITCH = 0x0020;
         public const uint WINEVENT_OUTOFCONTEXT = 0x0000;
 
+        public const uint MAPVK_VK_TO_VSC = 0;
         public const uint MAPVK_VSC_TO_VK = 1;
+
+        public const int WM_SYSCOMMAND = 0x0112;
+        public const int SC_MINIMIZE = 0xF020;
+        public const int WS_MINIMIZEBOX = 0x00020000;
+        public const uint GA_ROOTOWNER = 3;
+        public const uint SWP_NOSIZE = 0x0001;
+        public const uint SWP_NOMOVE = 0x0002;
+        public const uint SWP_NOACTIVATE = 0x0010;
+        public const uint SWP_ASYNCWINDOWPOS = 0x4000;
+        public const uint TOKEN_QUERY = 0x0008;
+        public const int TokenElevation = 20;
 
         public const uint CF_BITMAP = 2;
         public const uint CF_METAFILEPICT = 3;
@@ -234,6 +247,8 @@ namespace KeyFlip
         public static extern int GetKeyboardLayoutList(int count, [Out] IntPtr[] list);
         [DllImport("user32.dll")]
         public static extern uint MapVirtualKeyEx(uint code, uint mapType, IntPtr layout);
+        [DllImport("user32.dll")]
+        public static extern uint MapVirtualKey(uint code, uint mapType);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         public static extern int ToUnicodeEx(uint virtualKey, uint scanCode, byte[] keyState,
             [Out, MarshalAs(UnmanagedType.LPArray)] char[] buffer, int bufferSize, uint flags, IntPtr layout);
@@ -279,6 +294,20 @@ namespace KeyFlip
         public static extern bool CloseHandle(IntPtr handle);
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         public static extern bool QueryFullProcessImageName(IntPtr process, uint flags, StringBuilder name, ref int size);
+        [DllImport("advapi32.dll", SetLastError = true)]
+        public static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+        [DllImport("advapi32.dll", SetLastError = true)]
+        public static extern bool GetTokenInformation(IntPtr token, int kind, out int value, int size, out int returned);
+        [DllImport("user32.dll")]
+        public static extern IntPtr GetAncestor(IntPtr hwnd, uint kind);
+        [DllImport("user32.dll")]
+        public static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int width, int height, uint flags);
+        [DllImport("user32.dll")]
+        public static extern bool BringWindowToTop(IntPtr hwnd);
+        [DllImport("user32.dll")]
+        public static extern bool AttachThreadInput(uint from, uint to, bool attach);
+        [DllImport("user32.dll")]
+        public static extern bool LockWorkStation();
 
         // Clipboard.
         [DllImport("user32.dll", SetLastError = true)]
@@ -389,6 +418,35 @@ namespace KeyFlip
         {
             StringBuilder text = new StringBuilder(512);
             return GetWindowText(hwnd, text, text.Capacity) > 0 ? text.ToString() : "";
+        }
+
+        /// Whether a process runs as administrator: 1 when it does, 0 when it does not,
+        /// and -1 when Windows will not say.
+        public static int Elevation(uint processId)
+        {
+            if (processId == 0) return -1;
+            IntPtr process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, processId);
+            if (process == IntPtr.Zero) return -1;
+            try
+            {
+                IntPtr token;
+                if (!OpenProcessToken(process, TOKEN_QUERY, out token)) return -1;
+                try
+                {
+                    int elevated;
+                    int size;
+                    if (!GetTokenInformation(token, TokenElevation, out elevated, sizeof(int), out size)) return -1;
+                    return elevated != 0 ? 1 : 0;
+                }
+                finally
+                {
+                    CloseHandle(token);
+                }
+            }
+            finally
+            {
+                CloseHandle(process);
+            }
         }
 
         /// The executable name of a process without its extension, lowercase; "" when unknown.

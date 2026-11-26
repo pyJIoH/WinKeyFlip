@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
@@ -25,6 +26,8 @@ namespace KeyFlip.Tests
         private static extern bool BringWindowToTop(IntPtr window);
 
         private static EditorHost host;
+        /// A second window of the test, while a scenario has one open.
+        private static IntPtr second;
         private static Engine engine;
         private static KeyboardLayout english;
         private static KeyboardLayout russian;
@@ -93,7 +96,13 @@ namespace KeyFlip.Tests
                     new Scenario("Editor without accessibility: a selection is copied, converted and pasted", CanvasSelection),
                     new Scenario("Editor without accessibility: nothing selected, nothing changed", CanvasNothingSelected),
                     new Scenario("Editor without accessibility: a copied whole line is not pasted back", CanvasWholeLine),
-                    new Scenario("Empty field: Alt only switches the layout", EmptyField)
+                    new Scenario("Empty field: Alt only switches the layout", EmptyField),
+                    new Scenario("Mac shortcuts: moving, selecting and deleting text", MacTextNavigation),
+                    new Scenario("Mac shortcuts: what the application receives", MacKeysReceived),
+                    new Scenario("Mac shortcuts: taps still convert, and no menu opens", MacTaps),
+                    new Scenario("Mac shortcuts: the next window of the program, and minimizing", MacWindows),
+                    new Scenario("Mac shortcuts: Alt+click is Ctrl+click", MacClick),
+                    new Scenario("Mac shortcuts: an excluded program keeps its own", MacExcludedProgram)
                 };
                 foreach (Scenario scenario in scenarios)
                 {
@@ -190,9 +199,15 @@ namespace KeyFlip.Tests
             return input;
         }
 
+        /// Keys are pressed only while one of the test's own windows is in front.
+        private static bool InFront()
+        {
+            return HasFocus() || (second != IntPtr.Zero && Native.GetForegroundWindow() == second);
+        }
+
         private static void Send(params Native.INPUT[] inputs)
         {
-            if (!HasFocus()) throw new FocusLost();
+            if (!InFront()) throw new FocusLost();
             if (Native.SendInput((uint)inputs.Length, inputs, KeySender.InputSize) != inputs.Length)
             {
                 throw new InvalidOperationException("Windows refused the test's key presses.");
@@ -344,6 +359,416 @@ namespace KeyFlip.Tests
             WinClipboard clipboard = new WinClipboard();
             bool matched = WaitFor(delegate { return clipboard.GetText() == expected; });
             Expect.True(matched, what + ": the clipboard was not restored");
+        }
+
+        // ---- Mac shortcuts ----
+
+        private const int Alt = VirtualKeys.LeftAlt;
+        private const int Win = VirtualKeys.LeftWin;
+        private const int Shift = VirtualKeys.LeftShift;
+        private const int Ctrl = VirtualKeys.LeftControl;
+        private const int F6 = VirtualKeys.F1 + 5;
+
+        /// The scan code of a key, with 0x100 for the keys that are sent as extended.
+        private static int ScanCodeOf(int key)
+        {
+            if (key == VirtualKeys.LeftWin) return 0x15B;
+            bool extended = (key >= VirtualKeys.PageUp && key <= VirtualKeys.DownArrow)
+                || key == VirtualKeys.Insert || key == VirtualKeys.Delete;
+            return (int)Native.MapVirtualKey((uint)key, Native.MAPVK_VK_TO_VSC) | (extended ? 0x100 : 0);
+        }
+
+        private static void Hold(int key)
+        {
+            int scanCode = ScanCodeOf(key);
+            Send(Key(key, scanCode & 0xFF, false, (scanCode & 0x100) != 0));
+            Thread.Sleep(20);
+        }
+
+        private static void Release(int key)
+        {
+            int scanCode = ScanCodeOf(key);
+            Send(Key(key, scanCode & 0xFF, true, (scanCode & 0x100) != 0));
+            Thread.Sleep(20);
+        }
+
+        /// Holds all keys but the last, presses the last, and lets go in reverse order.
+        private static void Chord(params int[] keys)
+        {
+            Thread.Sleep(40);
+            foreach (int key in keys) Hold(key);
+            for (int i = keys.Length - 1; i >= 0; i--) Release(keys[i]);
+            Thread.Sleep(40);
+            Expect.True(engine.WaitUntilIdle(8000), "the engine did not finish in time");
+        }
+
+        private static bool ModifiersUp()
+        {
+            foreach (int key in KeyRemapper.ModifierKeys)
+            {
+                if (Native.IsKeyDown(key)) return false;
+            }
+            return true;
+        }
+
+        /// Runs a scenario with the Mac shortcuts on, and checks that it leaves no
+        /// modifier key down for the system.
+        private static void WithMacShortcuts(Action scenario)
+        {
+            engine.MacShortcuts = true;
+            Thread.Sleep(80);
+            try
+            {
+                scenario();
+                Expect.True(WaitFor(ModifiersUp), "a modifier key was left down");
+            }
+            finally
+            {
+                // Whatever went wrong, the keys this check holds go up.
+                if (!ModifiersUp())
+                {
+                    List<Native.INPUT> releases = new List<Native.INPUT>();
+                    foreach (int key in new[] { Alt, Win, Shift, Ctrl })
+                    {
+                        int scanCode = ScanCodeOf(key);
+                        releases.Add(Key(key, scanCode & 0xFF, true, (scanCode & 0x100) != 0));
+                    }
+                    Native.SendInput((uint)releases.Count, releases.ToArray(), KeySender.InputSize);
+                }
+                engine.MacShortcuts = false;
+                Thread.Sleep(80);
+            }
+        }
+
+        private static void ExpectSelection(TextBoxBase box, int start, int length, string what)
+        {
+            bool matched = WaitFor(delegate
+            {
+                return host.SelectionStartOf(box) == start && host.SelectionLengthOf(box) == length;
+            });
+            Expect.True(matched, what + ": expected the selection " + start + "+" + length + ", got "
+                + host.SelectionStartOf(box) + "+" + host.SelectionLengthOf(box));
+        }
+
+        /// What the canvas editor received since the last check: key presses and clicks
+        /// with their modifiers.
+        private static void ExpectReceived(string expected, string what)
+        {
+            string received = "";
+            Func<bool> read = delegate
+            {
+                string more = host.Canvas.TakeReceived();
+                if (more.Length > 0) received = received.Length == 0 ? more : received + " " + more;
+                return received == expected;
+            };
+            if (WaitFor(read))
+            {
+                // Nothing may follow.
+                Thread.Sleep(80);
+                read();
+            }
+            Expect.True(received == expected, what + ": the editor should have received \"" + expected
+                + "\", and received \"" + received + "\"");
+        }
+
+        private static void MacTextNavigation()
+        {
+            WithMacShortcuts(delegate
+            {
+                Begin(host.Plain, "one two three", 13, 0);
+                Chord(Win, VirtualKeys.LeftArrow);
+                ExpectSelection(host.Plain, 8, 0, "Win+Left");
+                Chord(Win, Shift, VirtualKeys.LeftArrow);
+                ExpectSelection(host.Plain, 4, 4, "Win+Shift+Left");
+                Chord(Alt, VirtualKeys.LeftArrow);
+                ExpectSelection(host.Plain, 0, 0, "Alt+Left");
+                Chord(Win, VirtualKeys.RightArrow);
+                ExpectSelection(host.Plain, 4, 0, "Win+Right");
+                Chord(Alt, VirtualKeys.RightArrow);
+                ExpectSelection(host.Plain, 13, 0, "Alt+Right");
+                Chord(Alt, Shift, VirtualKeys.LeftArrow);
+                ExpectSelection(host.Plain, 0, 13, "Alt+Shift+Left");
+                // The same with Shift pressed first, and two keys during one hold.
+                Begin(host.Plain, "one two three", 13, 0);
+                Hold(Shift);
+                Hold(Win);
+                Hold(VirtualKeys.LeftArrow);
+                Release(VirtualKeys.LeftArrow);
+                Hold(VirtualKeys.LeftArrow);
+                Release(VirtualKeys.LeftArrow);
+                Release(Win);
+                Release(Shift);
+                ExpectSelection(host.Plain, 4, 9, "Shift+Win+Left twice");
+                ExpectStartClosed("Win+arrows");
+
+                Begin(host.Plain, "one two three", 7, 0);
+                Chord(Alt, VirtualKeys.Backspace);
+                ExpectText(host.Plain, " three", "Alt+Backspace");
+                Chord(Alt, VirtualKeys.Delete);
+                ExpectText(host.Plain, "", "Alt+Delete");
+                // With a menu open or a modifier stuck, these letters would not arrive.
+                Type("ok");
+                ExpectText(host.Plain, "ok", "typing after the shortcuts");
+
+                Begin(host.Multiline, "one\r\ntwo\r\nthree", 6, 0);
+                Chord(Alt, VirtualKeys.UpArrow);
+                ExpectSelection(host.Multiline, 0, 0, "Alt+Up");
+                Chord(Alt, VirtualKeys.DownArrow);
+                ExpectSelection(host.Multiline, 15, 0, "Alt+Down");
+                Chord(Alt, Shift, VirtualKeys.UpArrow);
+                ExpectSelection(host.Multiline, 0, 15, "Alt+Shift+Up");
+                Chord(Alt, VirtualKeys.DownArrow);
+                Chord(Alt, VirtualKeys.Backspace);
+                ExpectText(host.Multiline, "one\r\ntwo\r\n", "Alt+Backspace deletes to the start of the line only");
+                ExpectLayout(english, "the shortcuts must not switch the layout");
+            });
+        }
+
+        /// Whether Alt+Shift changes the input language on this computer. The keys are
+        /// tagged as KeyFlip's own, so that KeyFlip leaves them alone.
+        private static bool AltShiftChangesLanguage()
+        {
+            List<KeyStroke> keys = new List<KeyStroke>();
+            keys.Add(new KeyStroke(VirtualKeys.LeftAlt, false));
+            keys.Add(new KeyStroke(VirtualKeys.LeftShift, false));
+            keys.Add(new KeyStroke(VirtualKeys.LeftShift, true));
+            // Keeps the release of Alt from opening the menu bar.
+            keys.Add(new KeyStroke(KeyRemapper.MaskKey, false));
+            keys.Add(new KeyStroke(KeyRemapper.MaskKey, true));
+            keys.Add(new KeyStroke(VirtualKeys.LeftAlt, true));
+            Send(KeySender.Strokes(keys));
+            bool changed = false;
+            for (int waited = 0; waited < 600 && !changed; waited += 20)
+            {
+                Thread.Sleep(20);
+                changed = Layouts.IdOf(Native.GetKeyboardLayout(host.ThreadId)) != english.Id;
+            }
+            if (changed) engine.Layouts.Select(english, false);
+            ExpectLayout(english, "back to English");
+            return changed;
+        }
+
+        private static void MacKeysReceived()
+        {
+            WithMacShortcuts(delegate
+            {
+                BeginCanvas("", 0, 0, false);
+                host.Canvas.TakeReceived();
+                Chord(Alt, 'C');
+                ExpectReceived("Ctrl+C", "Alt+C");
+                Chord(Shift, Alt, 'T');
+                ExpectReceived("Ctrl+Shift+T", "Shift+Alt+T");
+                Chord(Ctrl, 'C');
+                ExpectReceived("Ctrl+C", "Ctrl+C");
+                Chord(Alt, Shift, 'Z');
+                ExpectReceived("Ctrl+Y", "Alt+Shift+Z");
+                Chord(Alt, 'G');
+                ExpectReceived("F3", "Alt+G");
+                Chord(Alt, Shift, 'G');
+                ExpectReceived("Shift+F3", "Alt+Shift+G");
+                Chord(Win, VirtualKeys.Backspace);
+                ExpectReceived("Ctrl+Back", "Win+Backspace");
+                Chord(Win, VirtualKeys.Delete);
+                ExpectReceived("Ctrl+Delete", "Win+Delete");
+                Chord(Alt, Win, VirtualKeys.RightArrow);
+                ExpectReceived("Ctrl+Tab", "Alt+Win+Right");
+                Chord(Alt, Shift, VirtualKeys.LeftBracket);
+                ExpectReceived("Ctrl+Shift+Tab", "Alt+Shift+[");
+                Chord(Alt, F6);
+                ExpectReceived("Alt+F6", "Alt+F6");
+                // Several keys during one hold, a held key that repeats, and Alt let go first.
+                Hold(Alt);
+                Hold('C');
+                Release('C');
+                Hold('V');
+                Hold('V');
+                Release(Alt);
+                Release('V');
+                ExpectReceived("Ctrl+C Ctrl+V Ctrl+V", "Alt held for several keys");
+                ExpectStartClosed("Win shortcuts");
+
+                // Shift goes up while Alt is still down for the system, with no key in
+                // between: to Windows that is the shortcut that changes the input
+                // language, unless KeyFlip prevents it.
+                bool changes = AltShiftChangesLanguage();
+                host.Canvas.TakeReceived();
+                Hold(Alt);
+                Hold(F6);
+                Release(F6);
+                Hold(Shift);
+                Hold('Z');
+                Release('Z');
+                Release(Shift);
+                Release(Alt);
+                ExpectReceived("Alt+F6 Ctrl+Y", "Alt+F6, then Shift+Z");
+                Thread.Sleep(400);
+                ExpectLayout(english, "a shortcut changed the input language");
+                if (!changes) Console.WriteLine("     Alt+Shift does not change the input language here: that check proved nothing.");
+            });
+        }
+
+        private static void MacTaps()
+        {
+            WithMacShortcuts(delegate
+            {
+                Begin(host.Plain, "", 0, 0);
+                Type("ghbdtn");
+                ExpectText(host.Plain, "ghbdtn", "typing");
+                TapAlt();
+                ExpectText(host.Plain, "привет", "Alt");
+                ExpectLayout(russian, "Alt");
+                // With the menu bar active, "f" would open the File menu instead of typing.
+                Type("f");
+                ExpectText(host.Plain, "привета", "typing after Alt");
+                TapAlt();
+                ExpectText(host.Plain, "ghbdtnf", "Alt back");
+                ExpectLayout(english, "Alt back");
+                TapLeftControl();
+                ExpectText(host.Plain, "GHBDTNF", "Ctrl");
+                // A shortcut is not a tap.
+                string status = engine.Status;
+                Chord(Alt, VirtualKeys.RightArrow);
+                Chord(Win, VirtualKeys.LeftArrow);
+                Thread.Sleep(150);
+                ExpectText(host.Plain, "GHBDTNF", "after shortcuts");
+                Expect.Equal(engine.Status, status);
+                ExpectLayout(english, "after shortcuts");
+
+                engine.LayoutTapKey = LayoutTapKey.Win;
+                try
+                {
+                    Begin(host.Plain, "", 0, 0);
+                    Type("ghbdtn");
+                    TapWin();
+                    ExpectText(host.Plain, "привет", "Win");
+                    ExpectLayout(russian, "Win");
+                    ExpectStartClosed("Win");
+                    TapWin();
+                    ExpectText(host.Plain, "ghbdtn", "Win back");
+                    ExpectLayout(english, "Win back");
+                    Chord(Win, VirtualKeys.LeftArrow);
+                    ExpectSelection(host.Plain, 0, 0, "Win+Left with Win as the conversion key");
+                    ExpectText(host.Plain, "ghbdtn", "Win+Left is not a tap");
+                    ExpectStartClosed("Win+Left");
+                }
+                finally
+                {
+                    engine.LayoutTapKey = LayoutTapKey.Alt;
+                    RecoverFromStart();
+                }
+            });
+        }
+
+        private static bool InForeground(IntPtr window)
+        {
+            return WaitFor(delegate { return Native.GetForegroundWindow() == window; });
+        }
+
+        private static void MacWindows()
+        {
+            WithMacShortcuts(delegate
+            {
+                Begin(host.Plain, "", 0, 0);
+                second = host.OpenSecond("KeyFlip end-to-end check — second window");
+                try
+                {
+                    Thread.Sleep(200);
+                    Expect.True(HasFocus(), "the second window must open behind the first");
+                    Chord(Alt, VirtualKeys.Backquote);
+                    Expect.True(InForeground(second), "Alt+` did not bring the other window forward");
+                    Chord(Alt, VirtualKeys.Backquote);
+                    Expect.True(InForeground(host.Handle), "a second Alt+` did not go back to the first window");
+                    Chord(Alt, Shift, VirtualKeys.Backquote);
+                    Expect.True(InForeground(second), "Alt+Shift+` did not bring the other window forward");
+                    Chord(Alt, 'M');
+                    Expect.True(WaitFor(delegate { return Native.IsIconic(second); }), "Alt+M did not minimize the window");
+                }
+                finally
+                {
+                    host.CloseSecond();
+                    second = IntPtr.Zero;
+                    Thread.Sleep(100);
+                    if (!HasFocus()) TakeFocus();
+                }
+                // The first window has no minimize button: Alt+M leaves it alone.
+                Chord(Alt, 'M');
+                Thread.Sleep(200);
+                Expect.True(!Native.IsIconic(host.Handle) && HasFocus(), "Alt+M minimized a window that cannot be minimized");
+            });
+        }
+
+        private static void Click()
+        {
+            Native.INPUT down = new Native.INPUT();
+            down.type = 0; // INPUT_MOUSE
+            down.u.mi.dwFlags = 0x0002; // MOUSEEVENTF_LEFTDOWN
+            Native.INPUT up = down;
+            up.u.mi.dwFlags = 0x0004; // MOUSEEVENTF_LEFTUP
+            Send(down);
+            Thread.Sleep(30);
+            Send(up);
+            Thread.Sleep(30);
+        }
+
+        private static void MacClick()
+        {
+            Point pointer = Cursor.Position;
+            try
+            {
+                WithMacShortcuts(delegate
+                {
+                    BeginCanvas("", 0, 0, false);
+                    host.Canvas.TakeReceived();
+                    Cursor.Position = host.CenterOf(host.Canvas);
+                    Thread.Sleep(80);
+                    Click();
+                    ExpectReceived("Click", "a click");
+                    Hold(Alt);
+                    Click();
+                    Click();
+                    Release(Alt);
+                    ExpectReceived("Ctrl+Click Ctrl+Click", "Alt+click");
+                    Hold(Shift);
+                    Hold(Alt);
+                    Click();
+                    Release(Alt);
+                    Release(Shift);
+                    ExpectReceived("Ctrl+Shift+Click", "Shift+Alt+click");
+                    Click();
+                    ExpectReceived("Click", "a click afterwards");
+                    Thread.Sleep(300);
+                    ExpectLayout(english, "a click must not switch the layout");
+                });
+            }
+            finally
+            {
+                Cursor.Position = pointer;
+            }
+        }
+
+        private static void MacExcludedProgram()
+        {
+            WithMacShortcuts(delegate
+            {
+                BeginCanvas("", 0, 0, false);
+                host.Canvas.TakeReceived();
+                uint process;
+                Native.GetWindowThreadProcessId(host.Handle, out process);
+                engine.UseProgramsWithoutMacShortcuts("other, " + Native.ProcessName(process) + ".exe");
+                try
+                {
+                    Chord(Alt, 'C');
+                    ExpectReceived("Alt+C", "Alt+C in an excluded program");
+                    Chord(Alt, Shift, 'Z');
+                    ExpectReceived("Alt+Shift+Z", "Alt+Shift+Z in an excluded program");
+                }
+                finally
+                {
+                    engine.UseProgramsWithoutMacShortcuts("");
+                }
+                Chord(Alt, 'C');
+                ExpectReceived("Ctrl+C", "Alt+C when the program is no longer excluded");
+            });
         }
 
         // ---- Scenarios ----

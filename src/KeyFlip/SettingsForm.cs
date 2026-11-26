@@ -41,6 +41,9 @@ namespace KeyFlip
         private readonly GroupBox layoutsGroup = new GroupBox();
         private readonly Label layoutWarning = new Label();
         private readonly CheckBox capsLock = new CheckBox();
+        private readonly CheckBox macShortcuts = new CheckBox();
+        private readonly TextBox macExcluded = new TextBox();
+        private readonly ToolTip tips = new ToolTip();
         private readonly CheckBox launchAtLogin = new CheckBox();
         private readonly ComboBox testWindow = new ComboBox();
         private readonly Label currentLayout = new Label();
@@ -80,6 +83,12 @@ namespace KeyFlip
             capsLock.AutoSize = true;
             capsLock.CheckedChanged += CapsLockChanged;
             Add(capsLock, 6);
+            macShortcuts.Text = "Mac shortcuts: Alt is Command and Win is Option (Alt+C copies, Alt+Q quits)";
+            macShortcuts.AutoSize = true;
+            macShortcuts.UseMnemonic = false;
+            macShortcuts.CheckedChanged += MacShortcutsChanged;
+            Add(macShortcuts, 3);
+            Add(MacExcludedRow(), 8);
             launchAtLogin.Text = "Start when I sign in";
             launchAtLogin.AutoSize = true;
             launchAtLogin.CheckedChanged += LaunchAtLoginChanged;
@@ -102,6 +111,9 @@ namespace KeyFlip
             altKey.Checked = engine.LayoutTapKey == LayoutTapKey.Alt;
             winKey.Checked = engine.LayoutTapKey == LayoutTapKey.Win;
             capsLock.Checked = engine.CapsLockSwitchesLayout;
+            macShortcuts.Checked = engine.MacShortcuts;
+            macExcluded.Text = Settings.ProgramsWithoutMacShortcuts;
+            macExcluded.Enabled = macShortcuts.Checked;
             launchAtLogin.Checked = Settings.LaunchAtLogin;
             updating = false;
             UpdateState();
@@ -277,6 +289,26 @@ namespace KeyFlip
             return panel;
         }
 
+        /// The programs that keep their own shortcuts, under the Mac shortcuts check box.
+        private Control MacExcludedRow()
+        {
+            Panel panel = new Panel();
+            panel.Font = Font;
+            panel.Size = new Size(S(ContentWidth), S(26));
+            Label caption = Caption("Except in these programs:", 18, 4, null, secondary);
+            panel.Controls.Add(caption);
+            int x = S(18) + caption.PreferredSize.Width + S(8);
+            macExcluded.Location = new Point(x, S(1));
+            macExcluded.Width = S(ContentWidth) - x;
+            // Saved when the box is left, and when the window closes with the box focused.
+            macExcluded.Leave += MacExcludedChanged;
+            panel.Controls.Add(macExcluded);
+            string hint = "Names of program files, separated by commas. For example: game.exe, vmconnect";
+            tips.SetToolTip(macExcluded, hint);
+            tips.SetToolTip(caption, hint);
+            return panel;
+        }
+
         private Control LayoutsGroup()
         {
             GroupBox group = Group(layoutsGroup, "Keyboard layouts", 128);
@@ -415,6 +447,25 @@ namespace KeyFlip
             engine.SaveCapsLockSwitchesLayout(capsLock.Checked);
         }
 
+        private void MacShortcutsChanged(object sender, EventArgs e)
+        {
+            macExcluded.Enabled = macShortcuts.Checked;
+            if (updating) return;
+            engine.SaveMacShortcuts(macShortcuts.Checked);
+        }
+
+        private void MacExcludedChanged(object sender, EventArgs e)
+        {
+            if (updating || macExcluded.Text == Settings.ProgramsWithoutMacShortcuts) return;
+            engine.SaveProgramsWithoutMacShortcuts(macExcluded.Text);
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            MacExcludedChanged(this, EventArgs.Empty);
+            base.OnFormClosing(e);
+        }
+
         private void LaunchAtLoginChanged(object sender, EventArgs e)
         {
             if (updating) return;
@@ -478,6 +529,13 @@ namespace KeyFlip
             badge.BackColor = active ? Color.FromArgb(222, 244, 228) : Color.FromArgb(234, 234, 238);
             badge.ForeColor = active ? Color.FromArgb(22, 118, 50) : Color.FromArgb(92, 92, 100);
             pause.Text = engine.Enabled ? "Pause" : "Resume";
+            if (macShortcuts.Checked != engine.MacShortcuts)
+            {
+                // Changed from the menu of the tray icon.
+                updating = true;
+                macShortcuts.Checked = engine.MacShortcuts;
+                updating = false;
+            }
             UpdateKeyTexts();
             status.Text = engine.Status;
             shortcutStatus.Text = engine.ShortcutStatus;

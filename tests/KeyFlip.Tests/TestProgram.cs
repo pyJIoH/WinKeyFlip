@@ -85,12 +85,13 @@ namespace KeyFlip.Tests
             if (external >= 0)
             {
                 bool trace = options.Remove("--trace");
+                bool installed = options.Remove("--installed");
                 if (external + 2 >= options.Count)
                 {
-                    Console.WriteLine("Usage: KeyFlip.Tests.exe --external <window title> <script file> [--trace]");
+                    Console.WriteLine("Usage: KeyFlip.Tests.exe --external <window title> <script file> [--trace] [--installed]");
                     return 2;
                 }
-                return ExternalCheck.Run(options[external + 1], options[external + 2], trace);
+                return ExternalCheck.Run(options[external + 1], options[external + 2], trace, installed);
             }
             int render = options.IndexOf("--render-settings");
             if (render >= 0 && render + 1 < options.Count)
@@ -104,7 +105,7 @@ namespace KeyFlip.Tests
             }
             if (options.Count > 0)
             {
-                Console.WriteLine("Usage: KeyFlip.Tests.exe [--platform] [--layouts] | --e2e [name] [--trace] | --external <window title> <script file> [--trace] | --render-settings <file.png> [--unscaled]");
+                Console.WriteLine("Usage: KeyFlip.Tests.exe [--platform] [--layouts] | --e2e [name] [--trace] | --external <window title> <script file> [--trace] [--installed] | --render-settings <file.png> [--unscaled]");
                 return 2;
             }
             return RunCore();
@@ -115,6 +116,7 @@ namespace KeyFlip.Tests
             List<Scenario> scenarios = new List<Scenario>();
             TapDetectorTests.Add(scenarios);
             CapsLockGestureTests.Add(scenarios);
+            MacShortcutsTests.Add(scenarios);
             WordAtCaretTests.Add(scenarios);
             TransformTests.Add(scenarios);
             BoundaryTests.Add(scenarios);

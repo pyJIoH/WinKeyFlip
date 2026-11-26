@@ -16,6 +16,34 @@ namespace KeyFlip.Tests
         public int SelectionLength;
         /// Code editors copy the current line when nothing is selected.
         public bool CopiesLineWhenNothingSelected;
+        /// Every key press and click that arrived, with its modifiers: "Ctrl+Shift+Tab".
+        private readonly List<string> received = new List<string>();
+
+        /// What arrived since the last call. Safe on any thread.
+        public string TakeReceived()
+        {
+            lock (received)
+            {
+                string text = string.Join(" ", received);
+                received.Clear();
+                return text;
+            }
+        }
+
+        private void Note(string what)
+        {
+            string text = "";
+            if ((ModifierKeys & Keys.Control) != 0) text += "Ctrl+";
+            if ((ModifierKeys & Keys.Alt) != 0) text += "Alt+";
+            if ((ModifierKeys & Keys.Shift) != 0) text += "Shift+";
+            lock (received) received.Add(text + what);
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            Note("Click");
+            base.OnMouseDown(e);
+        }
 
         public CanvasEditor()
         {
@@ -45,6 +73,19 @@ namespace KeyFlip.Tests
 
         protected override void OnKeyDown(KeyEventArgs e)
         {
+            switch (e.KeyValue)
+            {
+                case (int)Keys.ShiftKey:
+                case (int)Keys.ControlKey:
+                case (int)Keys.Menu:
+                case (int)Keys.LWin:
+                case (int)Keys.RWin:
+                case 0xE8: // The key KeyFlip presses to keep menus closed.
+                    break;
+                default:
+                    Note(e.KeyCode.ToString());
+                    break;
+            }
             if (e.KeyCode == Keys.Insert && e.Control && !e.Shift && !e.Alt)
             {
                 string copied = SelectionLength > 0 ? Value.Substring(SelectionStart, SelectionLength)
@@ -117,10 +158,12 @@ namespace KeyFlip.Tests
         private sealed class HostForm : Form
         {
             public bool Quiet;
+            /// Shown behind the window in front, as an ordinary window.
+            public bool Behind;
 
             protected override bool ShowWithoutActivation
             {
-                get { return Quiet; }
+                get { return Quiet || Behind; }
             }
 
             protected override CreateParams CreateParams
@@ -147,6 +190,7 @@ namespace KeyFlip.Tests
 
         private readonly Thread thread;
         private HostForm form;
+        private HostForm second;
         private Exception failure;
 
         public EditorHost(bool quiet, string title)
@@ -228,6 +272,43 @@ namespace KeyFlip.Tests
         public void Do(Action action)
         {
             form.Invoke(action);
+        }
+
+        /// Another window of the same program, behind the first; it can be minimized.
+        public IntPtr OpenSecond(string title)
+        {
+            return Get(delegate
+            {
+                second = new HostForm();
+                second.Behind = true;
+                second.Text = title;
+                second.ClientSize = new Size(300, 120);
+                second.FormBorderStyle = FormBorderStyle.FixedDialog;
+                second.MaximizeBox = false;
+                second.StartPosition = FormStartPosition.Manual;
+                second.Location = new Point(form.Left + 40, form.Top + 40);
+                second.Show();
+                // Above other programs, like the first window. The framework would
+                // activate a window that is shown with TopMost set.
+                Native.SetWindowPos(second.Handle, (IntPtr)(-1), 0, 0, 0, 0,
+                    Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
+                return second.Handle;
+            });
+        }
+
+        public void CloseSecond()
+        {
+            Do(delegate
+            {
+                if (second != null) second.Close();
+                second = null;
+            });
+        }
+
+        /// The middle of a control, in screen coordinates.
+        public Point CenterOf(Control control)
+        {
+            return Get(delegate { return control.PointToScreen(new Point(control.Width / 2, control.Height / 2)); });
         }
 
         public T Get<T>(Func<T> read)

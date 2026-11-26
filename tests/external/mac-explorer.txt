@@ -1,0 +1,17 @@
+# Mac shortcuts in a folder window, through the copy of KeyFlip that is running (turn
+# its Mac shortcuts on first). Make an empty folder kfcheck-outer with one empty folder
+# kfcheck-inner in it, open kfcheck-outer in File Explorer, then:
+#
+#   dist\KeyFlip.Tests.exe --external "kfcheck-outer" tests\external\mac-explorer.txt --installed
+#
+# Nothing is deleted or renamed. The window is closed at the end.
+show
+# Select the only item, open it, and go back to the folder above.
+key:down
+key:alt+down
+front:kfcheck-inner
+key:alt+up
+front:kfcheck-outer
+# Close the tab, and with it the window.
+key:alt+w
+wait:700

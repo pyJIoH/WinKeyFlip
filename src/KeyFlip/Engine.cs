@@ -91,6 +91,8 @@ namespace KeyFlip
         public Engine() : this(new Layouts())
         {
             monitor.CapsLockSwitchesLayout = Settings.CapsLockSwitchesLayout;
+            monitor.SetProgramsWithoutMacShortcuts(Settings.ProgramsWithoutMacShortcuts);
+            monitor.MacShortcuts = Settings.MacShortcuts;
             layoutTapKey = Settings.LayoutTapKey;
             detector.LayoutKey = layoutTapKey;
         }
@@ -145,6 +147,45 @@ namespace KeyFlip
             CapsLockSwitchesLayout = value;
         }
 
+        /// Mac shortcuts: Alt is Command and the Windows key is Option.
+        public bool MacShortcuts
+        {
+            get { return monitor.MacShortcuts; }
+            set
+            {
+                if (value == monitor.MacShortcuts) return;
+                monitor.MacShortcuts = value;
+                RaiseStateChanged();
+            }
+        }
+
+        public void SaveMacShortcuts(bool value)
+        {
+            Settings.MacShortcuts = value;
+            MacShortcuts = value;
+        }
+
+        /// Programs that keep their own shortcuts, as the user wrote them.
+        public void SaveProgramsWithoutMacShortcuts(string names)
+        {
+            Settings.ProgramsWithoutMacShortcuts = names;
+            UseProgramsWithoutMacShortcuts(names);
+        }
+
+        /// Without storing the choice.
+        internal void UseProgramsWithoutMacShortcuts(string names)
+        {
+            monitor.SetProgramsWithoutMacShortcuts(names);
+        }
+
+        /// The session was locked or switched, or the computer slept: keys that were
+        /// held then were released where the keyboard hook could not see it.
+        public void InputInterrupted()
+        {
+            monitor.ResetShortcuts();
+            InvalidateContext();
+        }
+
         public bool Enabled { get { return enabled; } }
         public bool Running { get { return running; } }
         public string Status { get { return status; } }
@@ -160,6 +201,7 @@ namespace KeyFlip
         {
             monitor.OnEvent = Handle;
             monitor.OnForegroundChanged = ForegroundChanged;
+            monitor.OnCommand = RunCommand;
             worker = new Thread(Work);
             worker.IsBackground = true;
             worker.Name = "KeyFlip actions";
@@ -459,6 +501,15 @@ namespace KeyFlip
                 Perform(action, version);
             });
             RaiseStateChanged();
+        }
+
+        /// A Mac shortcut that acts on a window. Called inside the keyboard hook, so the
+        /// work itself is left to the action thread.
+        private void RunCommand(ShortcutCommand command)
+        {
+            if (!enabled) return;
+            if (Trace != null) Note("command " + command);
+            Enqueue(delegate { WindowCommands.Run(command); });
         }
 
         private void ForegroundChanged(IntPtr window)
@@ -910,7 +961,7 @@ namespace KeyFlip
             });
         }
 
-        private static bool IsApplicationWindow(IntPtr window)
+        internal static bool IsApplicationWindow(IntPtr window)
         {
             if (!Native.IsWindowVisible(window) || Native.GetWindow(window, Native.GW_OWNER) != IntPtr.Zero) return false;
             if ((Native.GetWindowLong(window, Native.GWL_EXSTYLE) & Native.WS_EX_TOOLWINDOW) != 0) return false;

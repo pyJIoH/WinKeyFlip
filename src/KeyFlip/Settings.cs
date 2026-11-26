@@ -63,6 +63,21 @@ namespace KeyFlip
             set { Set("CapsLockSwitchesLayout", value ? "1" : "0"); }
         }
 
+        /// Mac shortcuts: Alt is Command and the Windows key is Option. Off unless turned on.
+        public static bool MacShortcuts
+        {
+            get { return Get("MacShortcuts") == "1"; }
+            set { Set("MacShortcuts", value ? "1" : "0"); }
+        }
+
+        /// Programs in which the Mac shortcuts are left alone: names of executable
+        /// files, separated by commas.
+        public static string ProgramsWithoutMacShortcuts
+        {
+            get { return Get("ProgramsWithoutMacShortcuts") ?? ""; }
+            set { Set("ProgramsWithoutMacShortcuts", value ?? ""); }
+        }
+
         private static string RunCommand
         {
             get { return "\"" + Application.ExecutablePath + "\""; }

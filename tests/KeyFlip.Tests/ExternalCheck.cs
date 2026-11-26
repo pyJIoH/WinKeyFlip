@@ -15,7 +15,7 @@ namespace KeyFlip.Tests
     ///
     /// One step per line; lines starting with # are comments:
     ///   type:TEXT            press the keys that type TEXT with the English layout
-    ///   key:CHORD            tab, end, ctrl+end, ctrl+a, shift+left, ...
+    ///   key:CHORD            tab, end, ctrl+end, ctrl+a, shift+left, alt+c, win+left, alt+`, ...
     ///   tap:alt|ralt|ctrl|rctrl|win
     ///   expect:TEXT          the focused element's text is TEXT (\n, \s for a space, \\)
     ///   contains:TEXT        the focused element's text contains TEXT
@@ -26,10 +26,19 @@ namespace KeyFlip.Tests
     ///   layout:en|ru         select a layout
     ///   tap-key:alt|win      the key whose tap converts the layout (alt at the start)
     ///   caps-lock:on|off     whether Caps Lock alone switches the layout (off at the start)
+    ///   mac-shortcuts:on|off whether Alt is Command and Win is Option (off at the start)
+    ///   front:TITLE          the window in front has TITLE in its title; the next steps
+    ///                        are for that window
+    ///   minimized:TITLE      the window with TITLE in its title is minimized
+    ///   gone                 the window the keys were going to has closed
     ///   expect-layout:en|ru
     ///   show                 describe the focused element
     ///   close                ask the target window to close
     ///   wait:MILLISECONDS
+    ///
+    /// With --installed the check starts no engine of its own: the keys go to the copy
+    /// of KeyFlip that is running, with its settings, and the steps that change
+    /// settings are skipped.
     internal static class ExternalCheck
     {
         private sealed class FocusLost : Exception
@@ -47,6 +56,7 @@ namespace KeyFlip.Tests
         private const int Restore = 9;
 
         private static Engine engine;
+        private static bool installed;
         private static KeyboardLayout english;
         private static KeyboardLayout russian;
         private static IntPtr target;
@@ -55,8 +65,9 @@ namespace KeyFlip.Tests
         private static readonly Dictionary<string, int> Named = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         private const int Extended = 0x10000;
 
-        public static int Run(string titleFragment, string scriptPath, bool trace)
+        public static int Run(string titleFragment, string scriptPath, bool trace, bool useInstalled)
         {
+            installed = useInstalled;
             string[] steps = File.ReadAllLines(scriptPath, Encoding.UTF8);
             Layouts layouts = new Layouts(false);
             english = layouts.Find(layouts.EnglishId);
@@ -92,6 +103,7 @@ namespace KeyFlip.Tests
             Named["ctrl"] = VirtualKeys.LeftControl | 0x1D << 8;
             Named["shift"] = VirtualKeys.LeftShift | 0x2A << 8;
             Named["alt"] = VirtualKeys.LeftAlt | 0x38 << 8;
+            Named["win"] = VirtualKeys.LeftWin | 0x5B << 8 | Extended;
 
             target = FindWindow(titleFragment);
             if (target == IntPtr.Zero)
@@ -110,11 +122,23 @@ namespace KeyFlip.Tests
             if (trace) engine.Trace = delegate(string message) { Console.WriteLine("       " + message); };
             try
             {
-                engine.Start();
-                if (!engine.Running)
+                if (installed)
                 {
-                    Console.WriteLine("FAIL the keyboard listener did not start.");
-                    return 1;
+                    if (Process.GetProcessesByName("KeyFlip").Length == 0)
+                    {
+                        Console.WriteLine("SKIP KeyFlip is not running.");
+                        return 3;
+                    }
+                    Console.WriteLine("     using the running KeyFlip");
+                }
+                else
+                {
+                    engine.Start();
+                    if (!engine.Running)
+                    {
+                        Console.WriteLine("FAIL the keyboard listener did not start.");
+                        return 1;
+                    }
                 }
                 if (!TakeFocus())
                 {
@@ -139,6 +163,8 @@ namespace KeyFlip.Tests
                         IntPtr foreground = Native.GetForegroundWindow();
                         Native.GetWindowThreadProcessId(foreground, out owner);
                         Console.WriteLine("     in front: \"" + Native.WindowTitle(foreground) + "\" (" + Native.ProcessName(owner) + ")");
+                        Console.WriteLine("     the target window is " + (!Native.IsWindowVisible(target) ? "gone or hidden"
+                            : Native.IsIconic(target) ? "minimized" : "still open, behind"));
                         Expect.Failures++;
                         break;
                     }
@@ -153,7 +179,7 @@ namespace KeyFlip.Tests
             {
                 try
                 {
-                    engine.WaitUntilIdle(8000);
+                    Idle(8000);
                     KeyboardLayout initial = layouts.Find(initialLayout);
                     if (initial != null && HasFocus() && CurrentLayout() != initialLayout) layouts.Select(initial, false);
                 }
@@ -188,16 +214,42 @@ namespace KeyFlip.Tests
                     Chord(argument.Trim());
                     Console.WriteLine("     key " + argument.Trim());
                     Thread.Sleep(120);
-                    engine.WaitUntilIdle(8000);
+                    Idle(8000);
                     break;
                 case "caps-lock":
+                    if (SkippedSetting(step)) break;
                     engine.CapsLockSwitchesLayout = argument.Trim().ToLowerInvariant() == "on";
                     Console.WriteLine("     caps-lock " + argument.Trim());
                     break;
                 case "tap-key":
+                    if (SkippedSetting(step)) break;
                     engine.LayoutTapKey = argument.Trim().ToLowerInvariant() == "win" ? LayoutTapKey.Win : LayoutTapKey.Alt;
                     Console.WriteLine("     tap-key " + engine.LayoutKeyName);
                     break;
+                case "mac-shortcuts":
+                    if (SkippedSetting(step)) break;
+                    engine.MacShortcuts = argument.Trim().ToLowerInvariant() == "on";
+                    Thread.Sleep(100);
+                    Console.WriteLine("     mac-shortcuts " + argument.Trim());
+                    break;
+                case "front":
+                    ExpectFront(argument.Trim(), step);
+                    break;
+                case "minimized":
+                    {
+                        IntPtr window = FindWindow(argument.Trim());
+                        bool matched = window != IntPtr.Zero && WaitFor(delegate { return Native.IsIconic(window); }, 2500);
+                        Report(matched, step, window == IntPtr.Zero ? "no such window" : "the window is not minimized");
+                        break;
+                    }
+                case "gone":
+                    {
+                        // The window the keys were going to, which a shortcut closed.
+                        IntPtr window = target;
+                        bool matched = WaitFor(delegate { return !Native.IsWindowVisible(window); }, 2500);
+                        Report(matched, step, "the window is still open");
+                        break;
+                    }
                 case "tap":
                     Tap(argument.Trim().ToLowerInvariant());
                     break;
@@ -214,12 +266,12 @@ namespace KeyFlip.Tests
                     ExpectFile(argument, step);
                     break;
                 case "show-file":
-                    engine.WaitUntilIdle(8000);
+                    Idle(8000);
                     Thread.Sleep(900);
                     Console.WriteLine("     file: " + Visible(File.ReadAllText(Environment.ExpandEnvironmentVariables(argument.Trim()), Encoding.UTF8)));
                     break;
                 case "layout":
-                    engine.WaitUntilIdle(8000);
+                    Idle(8000);
                     if (!HasFocus()) throw new FocusLost();
                     engine.Layouts.Select(LayoutNamed(argument), false);
                     Console.WriteLine("     layout " + argument.Trim());
@@ -235,7 +287,7 @@ namespace KeyFlip.Tests
                     Show();
                     break;
                 case "close":
-                    engine.WaitUntilIdle(8000);
+                    Idle(8000);
                     Native.PostMessage(target, 0x0010, IntPtr.Zero, IntPtr.Zero); // WM_CLOSE
                     Console.WriteLine("     close");
                     break;
@@ -245,6 +297,33 @@ namespace KeyFlip.Tests
                 default:
                     throw new InvalidOperationException("Unknown step.");
             }
+        }
+
+        private static bool SkippedSetting(string step)
+        {
+            if (installed) Console.WriteLine("     skipped: " + step + " (the running KeyFlip has its own settings)");
+            return installed;
+        }
+
+        /// A shortcut brought another window forward: the steps that follow press
+        /// their keys there.
+        private static void ExpectFront(string titleFragment, string step)
+        {
+            IntPtr foreground = IntPtr.Zero;
+            bool matched = WaitFor(delegate
+            {
+                foreground = Native.GetForegroundWindow();
+                return Native.WindowTitle(foreground).IndexOf(titleFragment, StringComparison.OrdinalIgnoreCase) >= 0;
+            }, 2500);
+            uint process = 0;
+            if (matched)
+            {
+                Native.GetWindowThreadProcessId(foreground, out process);
+                // Never a window of another program: the check types only where it was sent.
+                matched = process == targetProcess;
+            }
+            if (matched) target = foreground;
+            Report(matched, step, "in front: " + Visible(Native.WindowTitle(foreground)));
         }
 
         private static KeyboardLayout LayoutNamed(string name)
@@ -283,6 +362,16 @@ namespace KeyFlip.Tests
                 + " (status: " + engine.Status + ")"));
         }
 
+        /// Waits until the engine of the check has finished what it was doing. The
+        /// running copy of KeyFlip cannot be asked, and an engine that was never
+        /// started would never answer: there the expectations that follow wait.
+        private static bool Idle(int milliseconds)
+        {
+            if (!installed) return engine.WaitUntilIdle(milliseconds);
+            Thread.Sleep(250);
+            return true;
+        }
+
         private static bool WaitFor(Func<bool> condition, int milliseconds)
         {
             for (int waited = 0; waited <= milliseconds; waited += 50)
@@ -319,7 +408,7 @@ namespace KeyFlip.Tests
 
         private static void ExpectText(string expected, bool contains, string step)
         {
-            engine.WaitUntilIdle(8000);
+            Idle(8000);
             string actual = null;
             bool matched = WaitFor(delegate
             {
@@ -515,16 +604,27 @@ namespace KeyFlip.Tests
             string[] names = chord.Split('+');
             List<int> keys = new List<int>();
             foreach (string name in names) keys.Add(KeyNamed(name.Trim()));
-            foreach (int key in keys)
+            List<int> held = new List<int>();
+            try
             {
-                Send(Key(key & 0xFF, key >> 8 & 0xFF, false, (key & Extended) != 0));
-                Thread.Sleep(15);
+                foreach (int key in keys)
+                {
+                    Send(Key(key & 0xFF, key >> 8 & 0xFF, false, (key & Extended) != 0));
+                    held.Add(key);
+                    Thread.Sleep(15);
+                }
             }
-            keys.Reverse();
-            foreach (int key in keys)
+            finally
             {
-                Send(Key(key & 0xFF, key >> 8 & 0xFF, true, (key & Extended) != 0));
-                Thread.Sleep(15);
+                // What went down goes up, wherever the focus is by now: a shortcut may
+                // have brought another window forward.
+                held.Reverse();
+                foreach (int key in held)
+                {
+                    Native.INPUT[] release = { Key(key & 0xFF, key >> 8 & 0xFF, true, (key & Extended) != 0) };
+                    Native.SendInput(1, release, KeySender.InputSize);
+                    Thread.Sleep(15);
+                }
             }
         }
 
@@ -565,9 +665,9 @@ namespace KeyFlip.Tests
             Send(Key(virtualKey, scanCode, true, extended));
             Stopwatch watch = Stopwatch.StartNew();
             Thread.Sleep(60);
-            bool idle = engine.WaitUntilIdle(10000);
-            Console.WriteLine("     tap " + which + " -> " + engine.Status + "  [" + watch.ElapsedMilliseconds + " ms"
-                + (idle ? "" : ", still busy") + "]");
+            bool idle = Idle(10000);
+            Console.WriteLine("     tap " + which + (installed ? "" : " -> " + engine.Status + "  [" + watch.ElapsedMilliseconds + " ms"
+                + (idle ? "" : ", still busy") + "]"));
         }
     }
 }

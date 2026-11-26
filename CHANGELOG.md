@@ -9,9 +9,16 @@ Notable user-visible changes to KeyFlip for Windows. Versions match `AssemblyInf
 - Caps Lock, pressed alone, switches between the English and Russian layouts and changes no text. A tap no longer turns capital letters on; for the regular Caps Lock, hold the key for half a second, as on macOS, or press Shift+Caps Lock. A checkbox in Settings turns this off.
 - The layout gesture can be moved from Alt to the Windows (Start) key in Settings. That is where Option is on a keyboard shared with a Mac, so the gesture stays on the same physical key on both systems. A quick tap then converts text instead of opening the Start menu; holding the key for more than a second, Ctrl+Esc and the Start button still open it, and Win shortcuts keep working.
 
+- Mac shortcuts, an option for a keyboard that is shared with a Mac (off by default; Settings or the tray menu). Alt works as Command and the Windows key as Option: Alt+C, V, X, Z, A, S, F, T, W and the rest are sent as Ctrl shortcuts, Alt+Q closes the window, Alt+Space opens Search, Alt+` goes to the next window of the same program, Alt+M minimizes, Alt+click is Ctrl+click. In text, Win+← and Win+→ move by word, Alt+← and Alt+→ to the start and the end of the line, Alt+↑ and Alt+↓ to the start and the end of the text, with Shift to select; Win+Backspace deletes a word and Alt+Backspace deletes to the start of the line. Terminals, folder windows, browsers, Visual Studio Code, JetBrains IDEs and Office get the shortcuts that fit them. The full list, and what Alt and the Windows key no longer do while the option is on, is in the README.
+- Programs can be excluded from the Mac shortcuts by the name of their program file. Remote desktops and virtual machines are excluded already.
+
 ### Fixed
 
 - A second tap that arrives while the first one is still being applied no longer activates the window's menu bar.
+
+### Privacy
+
+- With Mac shortcuts on, KeyFlip looks at the program in front to choose the shortcuts that apply: the name of its program file, the class of its window, whether it runs as administrator and, in folder windows, whether the focus is in a list of files. Nothing of this is stored or sent, and the shortcuts read no text and use no clipboard.
 
 ## [0.1.0] - 2026-11-25
 

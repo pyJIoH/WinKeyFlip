@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Threading;
 using KeyFlip.Core;
@@ -101,6 +102,58 @@ namespace KeyFlip
                 Key((ushort)Native.VK_CAPITAL, 0x3A, 0),
                 Key((ushort)Native.VK_CAPITAL, 0x3A, Native.KEYEVENTF_KEYUP)
             };
+        }
+
+        private static ushort ScanCodeOf(int key, out bool extended)
+        {
+            extended = false;
+            switch (key)
+            {
+                case KeyRemapper.MaskKey:
+                    return 0;
+                case VirtualKeys.LeftShift:
+                    return ScanLeftShift;
+                case VirtualKeys.RightShift:
+                    return 0x36;
+                case VirtualKeys.LeftControl:
+                    return ScanLeftControl;
+                case VirtualKeys.LeftAlt:
+                    return 0x38;
+                case VirtualKeys.RightControl:
+                    extended = true;
+                    return ScanLeftControl;
+                case VirtualKeys.RightAlt:
+                    extended = true;
+                    return 0x38;
+                case VirtualKeys.LeftWin:
+                    extended = true;
+                    return 0x5B;
+                case VirtualKeys.RightWin:
+                    extended = true;
+                    return 0x5C;
+                case VirtualKeys.PrintScreen:
+                    extended = true;
+                    return 0x37;
+            }
+            // The keys between the main block and the keypad share their scan codes
+            // with the keypad, and differ by this flag.
+            extended = (key >= VirtualKeys.PageUp && key <= VirtualKeys.DownArrow)
+                || key == VirtualKeys.Insert || key == VirtualKeys.Delete;
+            return (ushort)Native.MapVirtualKey((uint)key, Native.MAPVK_VK_TO_VSC);
+        }
+
+        /// The key events that a Mac shortcut turns into. Tagged, like everything KeyFlip sends.
+        public static Native.INPUT[] Strokes(List<KeyStroke> strokes)
+        {
+            Native.INPUT[] inputs = new Native.INPUT[strokes.Count];
+            for (int i = 0; i < inputs.Length; i++)
+            {
+                bool extended;
+                ushort scanCode = ScanCodeOf(strokes[i].Key, out extended);
+                inputs[i] = Key((ushort)strokes[i].Key, scanCode,
+                    (strokes[i].Up ? Native.KEYEVENTF_KEYUP : 0) | (extended ? Native.KEYEVENTF_EXTENDEDKEY : 0));
+            }
+            return inputs;
         }
 
         /// Sends all events as one uninterrupted sequence.
