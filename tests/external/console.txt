@@ -1,0 +1,20 @@
+# A classic console window with a command prompt whose prompt is ">".
+# Nothing is ever entered: the line is cleared with Esc at the end.
+layout:en
+wait:800
+type:ghbdtn
+tap:alt
+show
+contains:>привет
+# The layout is Russian now: the same keys type Russian letters.
+type:\sghbdtn
+contains:>привет привет
+tap:alt
+contains:>привет ghbdtn
+type:\sok
+contains:>привет ghbdtn ok
+tap:ctrl
+contains:>привет ghbdtn OK
+tap:ctrl
+contains:>привет ghbdtn ok
+key:esc

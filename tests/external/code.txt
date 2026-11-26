@@ -1,0 +1,41 @@
+# Visual Studio Code on the empty file %TEMP%\keyflip-check.txt, with
+# "files.autoSave": "afterDelay" and a short "files.autoSaveDelay", so the file
+# on disk shows what the editor holds without any extra key presses.
+layout:en
+wait:1500
+type:ghbdtn
+tap:alt
+file:%TEMP%\keyflip-check.txt:привет
+expect-layout:ru
+tap:alt
+file:%TEMP%\keyflip-check.txt:ghbdtn
+expect-layout:en
+tap:ctrl
+file:%TEMP%\keyflip-check.txt:GHBDTN
+tap:ctrl
+file:%TEMP%\keyflip-check.txt:ghbdtn
+show
+# A word that was not typed just now.
+key:end
+tap:alt
+show-file:%TEMP%\keyflip-check.txt
+expect-layout:ru
+tap:alt
+show-file:%TEMP%\keyflip-check.txt
+expect-layout:en
+# A selection.
+key:shift+home
+tap:ctrl
+show-file:%TEMP%\keyflip-check.txt
+key:end
+# A new word after a space, with a trailing space.
+type:\sntcn\s
+tap:alt
+show-file:%TEMP%\keyflip-check.txt
+tap:alt
+show-file:%TEMP%\keyflip-check.txt
+# Nothing selected and nothing typed just now: the line must not be duplicated.
+key:left
+key:right
+tap:ctrl
+show-file:%TEMP%\keyflip-check.txt

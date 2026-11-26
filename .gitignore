@@ -1,0 +1,16 @@
+# Build output
+/dist/
+/obj/
+
+# Local editor and Windows metadata
+.vs/
+.idea/
+*.user
+Thumbs.db
+desktop.ini
+
+# Local signing material and configuration
+.env
+.env.*
+*.pfx
+*.p12

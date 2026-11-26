@@ -1,0 +1,48 @@
+# Browser fixture (tests/fixtures/editor.html), freshly opened. The first tap
+# comes before any query of ours, so the browser's accessibility support is
+# started by KeyFlip.
+layout:en
+key:tab
+type:ghbdtn
+tap:alt
+expect:привет
+expect-layout:ru
+show
+tap:alt
+expect:ghbdtn
+expect-layout:en
+tap:ctrl
+expect:GHBDTN
+tap:ctrl
+expect:ghbdtn
+# A word that was not typed just now: UI Automation, paste, verification.
+key:end
+tap:alt
+expect:привет
+tap:alt
+expect:ghbdtn
+# Trailing space in a multi-line field.
+key:tab
+key:ctrl+end
+show
+tap:alt
+expect:first привет\s
+expect-layout:ru
+tap:alt
+expect:first ghbdtn\s
+expect-layout:en
+# A typed word after existing text.
+type:ntcn
+tap:alt
+expect:first ghbdtn тест
+tap:alt
+expect:first ghbdtn ntcn
+# Selection in a contenteditable.
+key:tab
+key:ctrl+a
+show
+tap:ctrl
+contains:GHBDTN
+key:ctrl+a
+tap:alt
+contains:ПРИВЕТ

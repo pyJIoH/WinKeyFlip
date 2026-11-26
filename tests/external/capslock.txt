@@ -1,0 +1,13 @@
+# Caps Lock as the layout key, at a command prompt whose prompt is ">" (opened
+# as for console.txt). Nothing is entered: the line is cleared with Esc at the end.
+caps-lock:on
+layout:en
+wait:800
+type:ghbdtn
+key:capslock
+type:\sghbdtn
+contains:>ghbdtn привет
+key:capslock
+type:\sok
+contains:>ghbdtn привет ok
+key:esc

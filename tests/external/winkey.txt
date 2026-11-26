@@ -1,0 +1,19 @@
+# The Windows key as the conversion key, at a command prompt whose prompt is ">"
+# (opened as for console.txt). If a tap opened the Start menu, the window would
+# lose the keyboard focus and the check would stop there. Nothing is entered:
+# the line is cleared with Esc at the end.
+tap-key:win
+layout:en
+wait:800
+type:ghbdtn
+tap:win
+wait:600
+contains:>привет
+expect-layout:ru
+type:\sghbdtn
+contains:>привет привет
+tap:win
+wait:600
+contains:>привет ghbdtn
+expect-layout:en
+key:esc
